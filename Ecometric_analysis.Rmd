@@ -1,0 +1,681 @@
+---
+title: 
+output:
+  pdf_document: default
+  html_document: default
+editor_options: 
+  chunk_output_type: inline
+---
+
+A total of 1935 subjects were included in this analysis. 1443 (74.6%) came from the population project who participated in telephone survey only. 492 (25.4%) came from the clinical project who completed the survey in person. 45 (2.3%) participated both projects and their data collected during in-person visit (i.e., clinical project) were used in this analysis. 12 subjects were excluded due to unverified geocodes.
+
+We assessed 7 neighborhood dimensions: aesthetic quality (5 items), walking environment (8 items), safety (3 items), availability of healthy foods (3 items), social cohesion (4 items) , activities with neighbors (5 items) and violence (4 items) (Table 1). Table2 shows the summary statistics of selected characteristics. For each neighborhood scale, missing values were replaced by its corresponding median if the participant completed at least half of the questions (Table 3). In total, 317 census tracts were represented in the analyses with a median of 2 participants per neighborhood (range 1–62) (Table4). 
+
+The empirical Bayes estimates were derived from 3-level hierarchical linear models adjusted by median age and percentage of male in each census tract. 
+
+The level 1 model represents the $i$th response item for the $j$th person in the $k$th neighborhood (census tract) as a function of the person specific mean score across all items corresponding to a neighborhood dimension ($b_{0jk}$), and an error term ($e_{ijk}$) that is normally distributed with a mean 0 and variance $\sigma^2$. 
+\begin{align*}
+Level1: &Y_{ijk} =b_{0jk} + e_{ijk}\\
+        &e_{ijk} \sim N(0,\sigma^2)
+\end{align*}
+The level 2 model models the person-specific mean score for a person $j$ in neighborhood $k$ as a function of the neighborhood specific mean ($\beta_{00k}$) and a random effect for person $j$ in neighborhood $k$ ($\alpha_{0ik}$) that is normally distributed with mean 0 and variance $\tau_b$.
+\begin{align*}
+Level2: &b_{0jk} =\beta_{00k} + \alpha_{0jk}\\
+        &\alpha_{0jk} \sim N(0,\tau_{b})
+\end{align*}
+The level 3 model models the neighborhood specific mean score for neighborhood $k$ as a function of the overall mean score ($\gamma_{000}$), a random effect for neighborhood $k$ ($U_{00k}$) that is normally distributed with mean 0 and variance $\tau_\eta$ and two fixed effects median age and percentage of male in neighborhood $k$ ($Age_{00k}$, $Male_{00k}$).
+\begin{align*}
+Level3: &\beta_{00k} =\gamma_{000} + U_{00k} + Age_{00k} + Male_{00k}\\
+        &U_{00k} \sim N(0,\tau_{\eta})
+\end{align*}
+
+Based on the parameter estimates, the empirical Bayes estimates -- estimated mean neighborhood perception score (e.g., mean asthetic quality score) -- was obtained for each individual: $$ \hat{Y}_{ijk} = \hat{b}_{0jk} = \hat{\beta}_{00k} + \hat{\alpha}_{0jk}$$ 
+
+Table5 shows the variance components and intraneighborhood correlation coefficients for seven scales.
+
+To potentially reduce the dimension of variables while taking into account of these seven different neighborhood scales simultaneously, we performed principal component analysis and factor analysis based on the empirical Bayes estimates of neighborhood scales.
+
+
+
+
+References
+
+1.	Mujahid, M.S., et al., Neighborhood characteristics and hypertension. Epidemiology, 2008. 19(4): p. 590-8.
+
+2.	Mujahid, M.S., et al., Assessing the measurement properties of neighborhood scales: from psychometrics to ecometrics. Am J Epidemiol, 2007. 165(8): p. 858-67.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=TRUE}
+#function to get percentage of missing in columns
+col_miss <- function(data){
+    n <- ncol(data)
+    nmiss <- matrix(0, nrow = n, ncol=2)
+    for (i in seq(n)){
+        nmiss[i,1] <- sum(as.numeric(is.na(data[,i])))
+        nmiss[i,2] <- nmiss[i,1]/(length(data[,i]))
+    }
+    rownames(nmiss) <- colnames(data)
+    colnames(nmiss) <- c("num", "proportion")
+    return(nmiss)
+}
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE,cache=T}
+library(lme4)
+library(dplyr)
+library(merTools)
+#input data set
+geo <- read.csv("/Users/ana/Downloads/MECA/data/MECA-CensusTract_DATA.csv",stringsAsFactors = F)
+all <- read.csv("/Users/ana/Downloads/MECA/data/MECA_Survey_n1935.csv",header = T, sep= ',')
+sex_age <- read.csv("/Users/ana/Downloads/MECA/data/nhgis0003_csv/nhgis0003_ds239_20185_2018_tract.csv",stringsAsFactors = F)
+
+
+#reverse some scales
+reversecat1<-c(paste("nbh_aq",c(3:5),sep=""),
+               paste("nbh_we",c(1:8),sep=""),
+               paste("nbh_safety",c(1:3),sep=""),
+               paste("nbh_food",c(1:3),sep=""),
+               paste("nbh_cohesion",c(1:4),sep=""))
+reversecat2<-c(paste("nbh_activity",c(1:5),sep=""),
+               paste("nbh_violence",c(1:4),sep=""))
+
+
+for (i in 1:length(reversecat1)){
+    all[,reversecat1[i]]<-6 - all[,reversecat1[i]]
+}
+
+for (i in 1:length(reversecat2)){
+    all[,reversecat2[i]]<-5 - all[, reversecat2[i]]
+}
+
+
+#filter sex_age data set
+sex_age <- sex_age[sex_age$STATEA == 13,]
+sex_age <- data.frame(total_pop = sex_age$AJWBE001, 
+                      male_pop = sex_age$AJWBE002, 
+                      female_pop =sex_age$AJWBE026,
+                      total_median_age = sex_age$AJWCE001,
+                      male_median_age =sex_age$AJWCE002,
+                      female_median_age =sex_age$AJWCE003,
+                      state = sex_age$STATEA,
+                      county = sex_age$COUNTYA,
+                      tract = sex_age$TRACTA)
+sex_age$county <- sapply(sex_age$county, function(x) sprintf("%03d", x))
+sex_age$tract <- sapply(sex_age$tract, function(x) sprintf("%06d", x))
+sex_age$geocode <- paste(sex_age$state, sex_age$county, sex_age$tract,sep = "")
+sex_age$per_male <- sex_age$male_pop / sex_age$total_pop
+sex_age <- dplyr::select(sex_age, c(10,11,4))
+
+#get neighborhood data set
+colnams_all <- colnames(all)
+nbh <- all[,grepl("nbh", colnams_all)]
+nbh$record_id <- all$MECAID
+nbh$geocode <- all$geocode
+nbh$aq <- all$Score_AQ
+nbh$we <- all$Score_WE
+nbh$safety <- all$Score_safety
+nbh$food <- all$Score_food
+nbh$cohesion <- all$Score_cohesion
+nbh$activity <- all$Score_neighbor
+nbh$violence <- all$Score_violence
+
+col_nbh <- colnames(nbh)
+
+#match age and sex by geocode
+nbh_with_age_sex <-merge(nbh, sex_age, all.x = T, by = "geocode")
+
+scale1 <- nbh_with_age_sex[,c(2:6,34,1,35,42,43)] #aq
+scale2 <- nbh_with_age_sex[,c(7:13,34,1,36,42,43)] #we, only use 1-7 items
+scale3 <- nbh_with_age_sex[,c(15:17,34,1,37,42,43)] #safety
+scale4 <- nbh_with_age_sex[,c(18:20,34,1,38,42,43)] #food
+scale5 <- nbh_with_age_sex[,c(21:24,34,1,39,42,43)] #cohesion
+scale6 <- nbh_with_age_sex[,c(25:29,34,1,40,42,43)] #activity
+scale7 <- nbh_with_age_sex[,c(30:33,34,1,41,42,43)] #violence
+
+#delete subject with more than half missing for each scale
+scale1 <- scale1[which(col_miss(t(scale1[,1:5]))[,2] <= 0.5),]
+scale2 <- scale2[which(col_miss(t(scale2[,1:7]))[,2] <= 0.5),]
+scale3 <- scale3[which(col_miss(t(scale3[,1:3]))[,2] <= 0.5),]
+scale4 <- scale4[which(col_miss(t(scale4[,1:3]))[,2] <= 0.5),]
+scale5 <- scale5[which(col_miss(t(scale5[,1:4]))[,2] <= 0.5),]
+scale6 <- scale6[which(col_miss(t(scale6[,1:5]))[,2] <= 0.5),]
+scale7 <- scale7[which(col_miss(t(scale7[,1:4]))[,2] <= 0.5),]
+
+
+#estimiate missing value
+for (i in 1 : dim(scale1)[2]){scale1[,i][is.na(scale1[,i])] <- median(na.omit(scale1[,i]))}
+for (i in 1 : dim(scale2)[2]){scale2[,i][is.na(scale2[,i])] <- median(na.omit(scale2[,i]))}
+for (i in 1 : dim(scale3)[2]){scale3[,i][is.na(scale3[,i])] <- median(na.omit(scale3[,i]))}
+for (i in 1 : dim(scale4)[2]){scale4[,i][is.na(scale4[,i])] <- median(na.omit(scale4[,i]))}
+for (i in 1 : dim(scale5)[2]){scale5[,i][is.na(scale5[,i])] <- median(na.omit(scale5[,i]))}
+for (i in 1 : dim(scale6)[2]){scale6[,i][is.na(scale6[,i])] <- median(na.omit(scale6[,i]))}
+for (i in 1 : dim(scale7)[2]){scale7[,i][is.na(scale7[,i])] <- median(na.omit(scale7[,i]))}
+
+
+
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#build new data set for each scale in long table form
+#nbh_aq
+comb_aq <- data.frame(n=rep(1:5,nrow(scale1)))
+for (i in 1: nrow(scale1)) {
+    lower <- 5 * i - 4
+    upper <- 5 * i
+    comb_aq[lower:upper, "nbh_aq"] <- t(scale1[i,paste("nbh_aq",1:5,sep="")])
+    comb_aq[lower:upper, "geocode"] <-  as.character(scale1[i,"geocode"])
+    comb_aq[lower:upper, "record_id"] <-  as.character(scale1[i,"record_id"])
+    comb_aq[lower:upper, "median_age"] <-  as.character(scale1[i,"total_median_age"])
+    comb_aq[lower:upper, "per_male"] <-  as.character(scale1[i,"per_male"])
+}
+
+#nbh_we
+comb_we <- data.frame(n=rep(1:7,nrow(scale2)))
+for (i in 1: nrow(scale2)) {
+    lower <- 7*i - 6
+    upper <- 7 *i
+    comb_we[lower:upper, "nbh_we"] <- t(scale2[i,paste("nbh_we",1:7,sep="")])
+    comb_we[lower:upper, "geocode"] <-  as.character(scale2[i,"geocode"])
+    comb_we[lower:upper, "record_id"] <-  as.character(scale2[i,"record_id"])
+    comb_we[lower:upper, "median_age"] <-  as.character(scale2[i,"total_median_age"])
+    comb_we[lower:upper, "per_male"] <-  as.character(scale2[i,"per_male"])
+}
+
+#nbh_safety 
+comb_safety  <- data.frame(n=rep(1:3,nrow(scale3)))
+for (i in 1: nrow(scale3)) {
+    lower <- 3*i - 2
+    upper <- 3 *i
+    comb_safety[lower:upper, "nbh_safety"]<- t(scale3[i,paste("nbh_safety",1:3,sep="")])
+    comb_safety[lower:upper, "geocode"] <-  as.character(scale3[i,"geocode"])
+    comb_safety[lower:upper, "record_id"] <- as.character(scale3[i,"record_id"])
+    comb_safety[lower:upper, "median_age"] <-  as.character(scale3[i,"total_median_age"])
+    comb_safety[lower:upper, "per_male"] <-  as.character(scale3[i,"per_male"])
+
+}
+
+#nbh_food
+comb_food  <- data.frame(n=rep(1:3,nrow(scale4)))
+for (i in 1: nrow(scale4)) {
+    lower <- 3*i - 2
+    upper <- 3 *i
+    comb_food[lower:upper,"nbh_food"]<-t(scale4[i,paste("nbh_food",1:3,sep="")])
+    comb_food[lower:upper, "geocode"] <-  as.character(scale4[i,"geocode"])
+    comb_food[lower:upper, "record_id"] <- as.character(scale4[i,"record_id"])
+    comb_food[lower:upper, "median_age"] <-  as.character(scale4[i,"total_median_age"])
+    comb_food[lower:upper, "per_male"] <-  as.character(scale4[i,"per_male"])
+}
+
+#nbh_cohesion
+comb_cohesion <- data.frame(n=rep(1:4,nrow(scale5)))
+for (i in 1: nrow(scale5)) {
+    lower <- 4*i - 3
+    upper <- 4 *i
+    comb_cohesion[lower:upper,"nbh_cohesion"]<-t(scale5[i,paste("nbh_cohesion",
+                                                                       1:4,sep="")])
+    comb_cohesion[lower:upper, "geocode"] <-  as.character(scale5[i,"geocode"])
+    comb_cohesion[lower:upper, "record_id"]<-  
+        as.character(scale5[i,"record_id"])
+    comb_cohesion[lower:upper, "median_age"] <-  as.character(scale5[i,"total_median_age"])
+    comb_cohesion[lower:upper, "per_male"] <-  as.character(scale5[i,"per_male"])
+
+}
+
+#nbh_activity
+comb_activity <- data.frame(n=rep(1:5,nrow(scale6)))
+for (i in 1: nrow(scale6)) {
+    lower <- 5*i - 4
+    upper <- 5*i
+    comb_activity[lower:upper,"nbh_activity"]<-t(scale6[i,paste("nbh_activity",1:5,sep="")])
+    comb_activity[lower:upper, "geocode"] <-  as.character(scale6[i,"geocode"])
+    comb_activity[lower:upper, "record_id"]<-  as.character(scale6[i,"record_id"])
+    comb_activity[lower:upper, "median_age"] <-  as.character(scale6[i,"total_median_age"])
+    comb_activity[lower:upper, "per_male"] <-  as.character(scale6[i,"per_male"])
+
+}
+
+#nbh_violence
+comb_violence <- data.frame(n=rep(1:4,nrow(scale7)))
+for (i in 1: nrow(scale7)) {
+    lower <- 4*i - 3
+    upper <- 4 *i
+    comb_violence[lower:upper,"nbh_violence"]<-t(scale7[i,paste("nbh_violence", 1:4,sep="")])
+    comb_violence[lower:upper, "geocode"] <- as.character(scale7[i,"geocode"])
+    comb_violence[lower:upper, "record_id"]<- as.character(scale7[i,"record_id"])
+    comb_violence[lower:upper, "median_age"] <-  as.character(scale7[i,"total_median_age"])
+    comb_violence[lower:upper, "per_male"] <-  as.character(scale7[i,"per_male"])
+
+}
+
+```
+
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#table1
+library(knitr)
+library(kableExtra)
+Description <-c("1. There is a lot of trash and litter on the street in my neighborhood.",
+                "2. There is a lot of noise in my neighborhood.",
+                "3. In my neighborhood, the buildings and homes are well- maintained.",
+                "4. The buildings and houses in my neighborhood are interesting.",
+                "5. My neighborhood is attractive.",
+                "1. My neighborhood offers many opportunities to be physically active.",
+                "2. Local sports clubs and other facilities in my neighborhood offer many    opportunities to get exercise.",
+                "3. It is pleasant to walk in my neighborhood.",
+                "4. The trees in my neighborhood provide enough shade.",
+                "5. In my neighborhood it is easy to walk places.",
+                "6. I often see other people walking in my neighborhood.",
+                "7. I often see other people exercising in my neighborhood, for example, jogging, bicycling or playing sports.",
+                "1. I feel safe walking in my neighborhood day or night.",
+                "2. Violence is not a problem in my neighborhood.",
+                "3. My neighborhood is safe from crime.",
+                "1. A large selection of fresh fruits and vegetables is available in my neighborhood.",
+                "2. The fresh fruits and vegetables in my neighborhood are of high quality.",
+                "3. A large selection of low fat foods is available in my neighborhood.",
+                "1. People around here are willing to help their neighbors.",
+                "2. People in my neighborhood generally get along with each other.",
+                "3. People in my neighborhood can be trusted.",
+                "4. People in my neighborhood share the same values.",
+                "1. About how often do you and people in your neighborhood do favors for each other? By favors we meansuch things as watching each other's children, helping with shopping, lending garden or house tools,and other small acts of kindness.",
+                "2. When a neighbor is not at home or on vacation, how often do you and other neighbors watch over their property?",
+                "3. How often do you and other people in the neighborhood ask each other advice about personal things such as child rearing or job openings?",
+                "4. How often do you and people in your neighborhood have parties or other get-togethers where other people in the neighborhood are invited?",
+                "5. How often do you and other people in your neighborhood visit in each other's homes or speak with each other on the street?",
+                "During the past six months, how often:",
+                " 1. ... was there a fight in your neighborhood in which a weapon was used?",
+                " 2. ... were there gang fights in your neighborhood?",
+                " 3. ... was there a sexual assault or rape in your neighborhood?",
+                " 4. ... was there a robbery or mugging in your neighborhood?"
+               )
+table1 <- data.frame(Description)
+
+kable(table1, "latex",col.names = NULL, booktabs = T,
+      caption="\\textbf{Neighborhood scale items (n = 1,935)}") %>%
+    kable_styling(latex_options = "HOLD_position") %>%
+    column_spec(1, width = "50em") %>%
+    pack_rows("Aesthetic quality", 1, 5) %>%
+    pack_rows("Walking environment", 6, 12) %>%
+    pack_rows("Safety", 13, 15) %>%
+    pack_rows("Availability of healthy foods", 16, 18) %>%
+    pack_rows("Social cohesions", 19, 22) %>%
+    pack_rows("Activities with neighbors", 23, 27) %>%
+    pack_rows("Violence", 28, 32) %>%
+    add_indent(29:32)
+
+
+
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#table2
+library(dplyr)
+baseline <- read.csv("/Users/ana/Downloads/MECA/data/MECA_Baseline_N502_Feb2020.csv",
+                 stringsAsFactors = F)
+data1500_2 <- read.csv('/Users/ana/Downloads/MECA/data/MECA_Pop_Analysis_Data_n1500.csv',
+                       stringsAsFactors = F)
+geo <- read.csv("/Users/ana/Downloads/MECA/data/MECA-CensusTract_DATA.csv",stringsAsFactors = F)
+
+#contain overlap obs in 1500 dataset 
+overlap <- intersect(baseline$record_id, data1500_2$MECAID)
+new_data1500_2 <-  data1500_2[-which(data1500_2$MECAID %in% overlap),]
+#add geocode for n502
+new_geo <- geo[which(geo$record_id %in% baseline$record_id),]
+rownames(new_geo) <- 1 : nrow(new_geo)
+new_geo <- dplyr::select(new_geo, c('record_id','geocode'))
+baseline <- dplyr::select(baseline, -c('geocode'))
+baseline_with_geoid <- merge(new_geo, baseline, all.y= T, by="record_id")
+
+
+age <- c(baseline_with_geoid$age, new_data1500_2$age)
+race <- c(baseline_with_geoid$ethnicity, new_data1500_2$ethnicity)
+education <- c(baseline_with_geoid$education, new_data1500_2$education)
+income <- c(baseline_with_geoid$hh_income, new_data1500_2$hh_income)
+MECAID <- c(baseline_with_geoid$record_id, new_data1500_2$MECAID)
+geocode <- as.character(c(baseline_with_geoid$geocode, new_data1500_2$geo_id))
+
+for (i in seq(geocode)) {
+    result <- unlist(strsplit(geocode[i],'-'))
+    if(length(result)){
+        geocode[i] <- paste(result, collapse = '')
+    }
+}
+#exclude several observations
+basic_info <- data.frame(MECAID,age,race,education, income,geocode=as.numeric(geocode))
+id <- c("20442","20602","20644","20667","21571","21833","21848","21873","21889","21892") 
+basic_info <- basic_info[!is.na(basic_info$geocode),]
+basic_info<- basic_info[-which(basic_info$MECAID %in% id),]
+
+
+geocode_sta <-basic_info %>% 
+                 dplyr::group_by(geocode) %>%
+                 dplyr::summarize(total=n()) 
+
+##table2 dataset
+#summary statistics of selected characteristics
+basic_info$age_info <- ifelse(basic_info$age <65 ,0, 1)
+basic_info$age_info[is.na(basic_info$age)] <- NA
+age_info <- as.matrix(table(basic_info$age_info,useNA = "ifany"))
+
+
+race_info <- as.matrix(table(basic_info$race, useNA = "ifany"))
+
+basic_info$edu_info[basic_info$education <= 3] <- 1
+basic_info$edu_info[basic_info$education > 3 & basic_info$education <= 5] <- 2
+basic_info$edu_info[basic_info$education == 6] <- 3
+basic_info$edu_info[is.na(basic_info$education)] <- NA
+edu_info <- as.matrix(table(basic_info$edu_info,useNA = "ifany"))
+
+basic_info$income_info[basic_info$income <= 6] <-1
+basic_info$income_info[basic_info$income ==7 | basic_info$income ==8] <-2
+basic_info$income_info[basic_info$income == 77] <-"not sure"
+basic_info$income_info[is.na(basic_info$income)] <- NA
+income_info <- as.matrix(table(basic_info$income_info, useNA = "ifany"))
+
+#combine results
+final_info <- rbind(age_info, race_info, edu_info, income_info)
+final_info <- cbind(final_info, round((final_info/nrow(basic_info))*100,1))
+final_info <- as.data.frame(final_info)
+
+
+my_rownames <- c("< 65", ">= 65", "Uknown",
+                          "African-American","Afro-Carbbean/West Indian",
+                          "African","Mixed Race/Multi-Ethnic","Other",
+                          "Uknown","Less than high school diploma",
+                          "High school graduation/ some college",
+                          "College graduation or more","Uknown",
+                          "$0–$49,999",">= $50,000", "Not sure", "Unknown")
+
+info_with_rowname<- data.frame(my_rownames,final_info)
+
+#table2
+
+row.names(info_with_rowname) <-NULL
+kable(info_with_rowname,"latex",col.names = c("Characteristic",
+                                              "No. of subjects",
+                                              "Percentage (%)"),
+      booktabs = T, 
+      caption = "\\textbf{Characteristics of respondents (n=1,935)}",
+      align = 'r') %>%
+    kable_styling(latex_options = "HOLD_position") %>%
+    add_header_above(c(" ", "Survey" =2)) %>%
+    pack_rows("Age (years)", 1, 3) %>%
+    pack_rows("Race/ethnicity", 4, 9) %>%
+    pack_rows("Education", 10, 13) %>%
+    pack_rows("Annual income", 14, 17) %>%
+    column_spec(2:3, width = "5em")
+     
+
+
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#table3
+library(psych)
+
+var <- c("geocode","record_id","aq","we","safety","food","cohesion","activity","violence",
+         "per_male","total_median_age")
+#get the Cronbach’s alpha for each scale
+aq_alpha <-alpha(scale1[,!(colnames(scale1) %in% var)],check.keys=TRUE)
+we_alpha <-alpha(scale2[,!(colnames(scale2) %in% var)],check.keys=TRUE)
+safety_alpha <-alpha(scale3[,!(colnames(scale3) %in% var)],check.keys=TRUE)
+food_alpha <-alpha(scale4[,!(colnames(scale4) %in% var)],check.keys=TRUE)
+cohesion_alpha <-alpha(scale5[,!(colnames(scale5) %in% var)],check.keys=TRUE)
+activity_alpha <-alpha(scale6[,!(colnames(scale6) %in% var)],check.keys=TRUE)
+violence_alpha <-alpha(scale7[,!(colnames(scale7) %in% var)],check.keys=TRUE)
+
+
+#Descriptive statistics for seven scales on neighborhood conditions
+aq <-matrix(unlist(c(nrow(scale1),ncol(scale1)-5, "1-5", 
+        mean(scale1$aq),sd(scale1$aq), aq_alpha$total[1])),nrow = 1)
+we <- matrix(unlist(c(nrow(scale2),ncol(scale2)-5, "1-5", 
+        mean(scale2$we),sd(scale2$we), we_alpha$total[1])),nrow = 1)
+safety <- matrix(unlist(c(nrow(scale3),ncol(scale3)-5, "1-5",
+        mean(scale3$safety),sd(scale3$safety), safety_alpha$total[1])),nrow = 1)
+food <- matrix(unlist(c(nrow(scale4),ncol(scale4)-5, "1-5",
+        mean(scale4$food),sd(scale4$food), food_alpha$total[1])),nrow = 1)
+cohesion <- matrix(unlist(c(nrow(scale5),ncol(scale5)-5, "1-5",
+        mean(scale5$cohesion),sd(scale5$cohesion), cohesion_alpha$total[1])),nrow = 1)
+activity <- matrix(unlist(c(nrow(scale6),ncol(scale6)-5, "1-4",
+        mean(scale6$activity),sd(scale6$activity), activity_alpha$total[1])),nrow = 1)
+violence <- matrix(unlist(c(nrow(scale7),ncol(scale7)-5, "1-4",
+        mean(scale7$violence),sd(scale7$violence), violence_alpha$total[1])),nrow = 1)
+
+
+table3_data<- rbind(aq, we, safety,food, cohesion, activity, violence)
+table3_data[,4:5] <- round(as.numeric(table3_data[,4:5]),1)
+table3_data[,6] <- round(as.numeric(table3_data[,6]),2)
+
+rowname_table3<- c("Aesthetic quality",
+                   "Walking environment",
+                   "Safety",
+                   "Availability of healthy foods",
+                   "Social cohesion",
+                   "Activities with neighbors",
+                   "Violence")
+
+table3_data <- data.frame(rowname_table3, table3_data)
+
+
+table3_data %>%
+    kable("latex", booktabs = T, escape = F,align = "r",
+          caption = "\\textbf{Descriptive statistics for seven scales on neighborhood conditions (n=1935)}",
+          col.names = linebreak(c("Scale",
+                                  "No. of\nsubjects",
+                                  "No. of\n items in scale",
+                                  "Range of\n scores",
+                                  "Mean\n score",
+                                  "Standard\n deviation", 
+                                  "Cronbach’s\n alpha"), align = "c")) %>%
+    kable_styling(latex_options = c('hold_position')) %>%
+    row_spec(0, font_size =9,align = 'c')%>%
+    collapse_rows(1, latex_hline = "none")%>%
+    footnote(number="Missing values in each neighborhood scale were replaced by its corresponding median if the participant completed at least half of the questions.", threeparttable = T)
+```
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#table4
+geocode_num <- as.data.frame(table(nbh$geocode))
+reports <- geocode_num %>% dplyr::group_by(Freq) %>% dplyr::summarise(total=n())
+part1 <- reports$total[1:5] #residents <=5 
+part2 <- sum(reports$total[6:15]) #residents <=15
+part3 <- sum(reports$total[16:30]) #residents <=30
+part4 <- sum(reports$total[31:36]) #residents > 30
+num <- c(part1,part2,part3,part4)
+percentage <- sprintf('%.2f', (num/sum(num))*100)
+rows <- c(1:5,"6 - 15","16 - 30"," >= 30")
+table4 <- data.frame(name = rows, number = paste(num, " (", percentage,")"))
+
+
+kable(table4,"latex", booktabs = T,align = "r",
+      caption = "\\textbf{Summary of the number of participants in each census tract (n=317)}",
+      col.names = c("No. of participants",
+                 "No. of census tract (%)")) %>%
+    column_spec(2, width = "11em") %>%
+    column_spec(1, width = "9em") %>%
+    row_spec(0, font_size =10,align = 'c')%>%
+    collapse_rows(1, latex_hline = "none") %>%
+    kable_styling(latex_options = c('hold_position'))
+```
+
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE,cache=T}
+library(lme4)
+#hierarchical linear models
+mixed_nbh_aq <- lmer(nbh_aq ~  (1|geocode/record_id) + median_age + per_male, data=comb_aq)
+mixed_nbh_we <- lmer(nbh_we ~ (1|geocode/record_id)+ median_age + per_male, data=comb_we)
+mixed_nbh_safety <- lmer(nbh_safety ~ (1|geocode/record_id) +median_age + per_male, data=comb_safety,REML=FALSE)
+mixed_nbh_food <- lmer(nbh_food ~  (1|geocode/record_id) + median_age + per_male, data=comb_food)
+mixed_nbh_cohesion <- lmer(nbh_cohesion ~  (1|geocode/record_id) + median_age + per_male, data=comb_cohesion)
+mixed_nbh_activity <- lmer(nbh_activity ~  (1|geocode/record_id) + median_age + per_male, data=comb_activity)
+mixed_nbh_violence <- lmer(nbh_violence ~  (1|geocode/record_id) + median_age + per_male , data=comb_violence)
+
+
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#table5
+var_aq <- as.data.frame(summary(mixed_nbh_aq)$varcor)[,4][c(3,1,2)]
+var_we <- as.data.frame(summary(mixed_nbh_we)$varcor)[,4][c(3,1,2)]
+var_safety <- as.data.frame(summary(mixed_nbh_safety)$varcor)[,4][c(3,1,2)]
+var_food <- as.data.frame(summary(mixed_nbh_food)$varcor)[,4][c(3,1,2)]
+var_cohesion <- as.data.frame(summary(mixed_nbh_cohesion)$varcor)[,4][c(3,1,2)]
+var_activity <- as.data.frame(summary(mixed_nbh_activity)$varcor)[,4][c(3,1,2)]
+var_violence <- as.data.frame(summary(mixed_nbh_violence)$varcor)[,4][c(3,1,2)]
+
+var_data <- data.frame(var_aq, var_we, var_safety,var_food,
+                       var_cohesion, var_activity, var_violence)
+iccdata <- as.matrix(var_data)
+var_data <- as.data.frame(rbind(iccdata, iccdata[3,] /
+                                    (iccdata[2,]+iccdata[3,])))
+
+var_rowname <- c("Within-person variance",
+                 "Within-neighborhood variance",
+                 "Between-neighborhood variance",
+                 "Intraneighborhood correlation")
+var_data <- round(var_data,2) 
+var_data <- apply(var_data, 2, function(x) sprintf("%.2f", x))
+var_data <- data.frame(var_rowname,var_data)
+
+kable(var_data, "latex", booktabs = T, align = 'r',
+      caption = "\\textbf{Variance components and intraneighborhood correlation
+coefficients for seven scales on neighborhood conditions (n =1,935)}",
+      col.names = c("","Aesthetic quality",
+                    "Walking environment",
+                    "Safety",
+                    "Availability of healthy foods",
+                    "Social cohesion",
+                    "Activities with neighbors",
+                    "Violence")) %>%
+    row_spec(0, font_size = 7) %>%
+    add_header_above(c(" ", "Scale" =7)) %>%
+    landscape() %>%
+    kable_styling(latex_options = c('hold_position'))
+    #kable_styling(latex_options = "scale_down")
+
+```
+\thispagestyle{empty}
+
+# Principal component analysis
+
+```{r echo=FALSE, message=FALSE, warning=FALSE,cache=T}
+library(factoextra)
+#predicted score
+
+#AQ
+aq_score <- data.frame(MECAID=comb_aq$record_id, aq=predict(mixed_nbh_aq), n=comb_aq$n)
+aq_score<- aq_score[aq_score$n==1,-3]
+
+#WE
+we_score <- data.frame(MECAID=comb_we$record_id, we=predict(mixed_nbh_we), n=comb_we$n)
+we_score<- we_score[we_score$n==1,-3]
+#safety
+safety_score <- data.frame(MECAID=comb_safety$record_id, safety=predict(mixed_nbh_safety), n=comb_safety$n)
+safety_score<- safety_score[safety_score$n==1,-3]
+#food
+food_score <- data.frame(MECAID=comb_food$record_id, food=predict(mixed_nbh_food), n=comb_food$n)
+food_score<- food_score[food_score$n==1,-3]
+#cohesion
+
+cohesion_score <- data.frame(MECAID=comb_cohesion$record_id, cohesion=predict(mixed_nbh_cohesion), n=comb_cohesion$n)
+cohesion_score<- cohesion_score[cohesion_score$n==1,-3]
+#activity
+activity_score <- data.frame(MECAID=comb_activity$record_id, activity=predict(mixed_nbh_activity), n=comb_activity$n)
+activity_score<- activity_score[activity_score$n==1,-3]
+#violence
+violence_score <- data.frame(MECAID=comb_violence$record_id, violence=predict(mixed_nbh_violence), n=comb_violence$n)
+violence_score<- violence_score[violence_score$n==1,-3]
+
+
+score_nbh <- Reduce(function(x, y) merge(x, y, all.x =T, by.y = "MECAID"),
+                list(aq_score,we_score,safety_score,food_score,cohesion_score,
+                     activity_score,violence_score))
+
+pca <- prcomp(na.omit(score_nbh[,c(2:8)]), center = TRUE, scale. = TRUE)
+result <- summary(pca)
+
+kable(round(t(result$importance),2), "latex", booktabs = T, align = 'r',
+      caption = "\\textbf{Principal components of neighborhood scales (N=1885)}") %>%
+     kable_styling(latex_options = c('hold_position'))%>%
+     collapse_rows(1, latex_hline = "none")
+
+kable(round(t(pca$rotation),2),"latex",booktabs = T, align = 'r',
+      caption = "\\textbf{Loadings of principal components of neighborhood scales (N=1885)}")%>%
+      collapse_rows(1, latex_hline = "none") %>%
+      kable_styling(latex_options = c('hold_position'))
+
+fviz_eig(pca)
+
+```
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#estimated nbh values
+
+estimated_nbh <- merge(aq_score,we_score, all.x = T, by="MECAID")
+estimated_nbh <- merge(estimated_nbh,safety_score, all.x = T, by="MECAID")
+estimated_nbh <- merge(estimated_nbh,food_score, all.x = T, by="MECAID")
+estimated_nbh <- merge(estimated_nbh,cohesion_score, all.x = T, by="MECAID")
+estimated_nbh <- merge(estimated_nbh,activity_score, all.x = T, by="MECAID")
+estimated_nbh <- merge(estimated_nbh,violence_score, all.x = T, by="MECAID")
+
+colnames(estimated_nbh) <- c('record_id', 
+                              paste("estimated",colnames(estimated_nbh)[-1],sep = '_'))
+nbh_data_final <- merge(estimated_nbh, nbh_with_age_sex, all = T, by="record_id")
+
+write.csv(nbh_data_final,"/Users/ana/Downloads/MECA/data/estimated_nbh_scales.csv",row.names = F)
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+fa_result1<- factanal(na.omit(score_nbh[,c(2:8)]), factors =1)
+fa_result2<- factanal(na.omit(score_nbh[,c(2:8)]), factors =2)
+fa_result3<- factanal(na.omit(score_nbh[,c(2:8)]), factors =3)
+
+l1 <-fa_result1$loadings
+load1<- data.frame(matrix(as.numeric(l1), attributes(l1)$dim, dimnames=attributes(l1)$dimnames))
+
+l2 <-fa_result2$loadings
+load2<-data.frame(matrix(as.numeric(l2), attributes(l2)$dim, dimnames=attributes(l2)$dimnames))
+
+l3 <-fa_result3$loadings
+load3<-data.frame(matrix(as.numeric(l3), attributes(l3)$dim, dimnames=attributes(l3)$dimnames))
+
+
+fa_df <- round(data.frame(fa_result1$uniquenesses,load1,fa_result2$uniquenesses,load2,fa_result3$uniquenesses,load3),2)
+
+cumu_var <- c("",0.430,"",0.240,0.47,"",0.183,0.356,0.526)
+fa_df <- rbind(fa_df, cumu_var)
+fa_df$rowname <- c("Aesthetic quality",
+                   "Walking environment",
+                   "Safety",
+                   "Availability of healthy foods",
+                   "Social cohesion",
+                   "Activities with neighbors",
+                   "Violence",
+                   "Cumulative Variance")
+
+kable(fa_df[c(10,1:9)], "latex", booktabs = T, align = 'r',row.names = F,
+      col.names = c("","uniquenesses","Factor1",
+                    "uniquenesses","Factor1","Factor2",
+                    "uniquenesses","Factor1","Factor2","Factor3"), caption = "\\textbf{Results of factor analysis of neighborhood scales (N=1885)}") %>%
+    kable_styling(latex_options = c('hold_position')) %>%
+    add_header_above(c(" ", "Number of Factor = 1" =2,"Number of Factor = 2"=3,"Number of Factor = 3"=4)) %>%
+    collapse_rows(1, latex_hline = "none") %>%
+    row_spec(8,bold = T) %>%
+    landscape()
+
+    
+
+
+
+
+     
+
+```
+
